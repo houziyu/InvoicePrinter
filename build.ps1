@@ -9,6 +9,9 @@ if ($LASTEXITCODE -ne 0) { throw "Icon generation failed." }
 python -m PyInstaller --noconfirm --clean --onefile --windowed `
   --name "InvoicePrinter" `
   --icon "app.ico" `
+  --add-data "LICENSE;." `
+  --add-data "THIRD_PARTY_NOTICES.md;." `
+  --add-data "licenses;licenses" `
   --collect-all pymupdf `
   --collect-all tkinterdnd2 `
   --hidden-import win32timezone `

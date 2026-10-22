@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [
+    ('LICENSE', '.'),
+    ('THIRD_PARTY_NOTICES.md', '.'),
+    ('licenses', 'licenses'),
+]
 binaries = []
 hiddenimports = ['win32timezone']
 tmp_ret = collect_all('pymupdf')

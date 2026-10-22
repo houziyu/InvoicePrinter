@@ -4,6 +4,12 @@
 
 基于 Python、Tkinter 和 PyMuPDF 开发，无需登录。程序在本地读取和处理 PDF，不向在线服务上传发票。
 
+## 下载成品
+
+Windows 10 / 11（64 位）用户可以直接[下载 InvoicePrinter.exe](https://github.com/houziyu/InvoicePrinter/releases/latest/download/InvoicePrinter.exe)，双击运行，无需安装 Python。
+
+完整压缩包、校验文件和历史版本见 [Releases 发布页面](https://github.com/houziyu/InvoicePrinter/releases)。程序首次启动需要解压运行组件，可能等待数秒。
+
 ## 功能
 
 - **批量导入**：选择多个 PDF，或从文件管理器拖入窗口；多页 PDF 按页加入列表，相同路径下的相同页自动去重。
