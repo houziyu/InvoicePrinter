@@ -1,0 +1,45 @@
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Build and release outputs (keep InvoicePrinter.spec tracked)
+/build/
+/dist/
+/release/
+*.exe
+*.zip
+*.7z
+
+# Local invoices and generated documents
+*.pdf
+/invoices/
+/output/
+/samples-private/
+
+# Local secrets and settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.vscode/
+.idea/
+
+# OS and temporary files
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log
+*.tmp
+*.bak
+~$*
