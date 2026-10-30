@@ -5,12 +5,62 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pymupdf as fitz
+from PIL import Image
 
 from invoice_printer import compose_pdf, load_preferences, make_thumbnail
 from ui_helpers import AppTestCase
 
 
 class WorkflowTests(AppTestCase):
+    def test_image_file_picker_preview_export_and_print(self):
+        path = self.root / "图片 发票.JPG"
+        with Image.new("RGB", (240, 120), "red") as image:
+            image.save(path)
+        with patch("invoice_printer.filedialog.askopenfilenames", return_value=[str(path)]) as picker:
+            self.app.add_files()
+        self.wait_idle()
+        self.assertIn("*.png", picker.call_args.kwargs["filetypes"][0][1])
+        self.assertIn("*.jpg", picker.call_args.kwargs["filetypes"][0][1])
+        self.assertEqual(len(self.app.items), 1)
+        self.assertIsNotNone(self.app.preview_data)
+        self.app.set_amount(0, "123.45")
+        self.assertEqual(self.app.items[0].amount, 123.45)
+        target = self.root / "image-output.pdf"
+        self.assertTrue(self.app.export_to_path(target))
+        self.wait_idle()
+        with fitz.open(target) as doc:
+            self.assertEqual(len(doc[0].get_image_info()), 1)
+        with patch("invoice_printer.print_pdf_bytes") as printer:
+            self.app.print_document()
+            self.wait_idle()
+            printer.assert_called_once()
+            with fitz.open(stream=printer.call_args.args[0], filetype="pdf") as doc:
+                self.assertEqual(len(doc[0].get_image_info()), 1)
+        original = path.read_bytes()
+        self.assertFalse(self.app.export_to_path(path))
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_drop_mixed_folder_and_individual_images(self):
+        folder = self.root / "混合 文件夹"
+        folder.mkdir()
+        pdf = self.make_pdf("invoice.pdf", (10,))
+        pdf.rename(folder / pdf.name)
+        image_path = folder / "照片.PNG"
+        with Image.new("RGB", (120, 60), "blue") as image:
+            image.save(image_path)
+            image.save(folder / "照片.JPEG")
+        (folder / "ignore.txt").write_text("ignore")
+        nested = folder / "nested"
+        nested.mkdir()
+        with Image.new("RGB", (120, 60), "red") as image:
+            image.save(nested / "ignore.png")
+        event = SimpleNamespace(data=self.app.tk.call("list", str(folder), str(image_path)), action="copy")
+        self.assertEqual(self.app._drop_files(event), "copy")
+        self.wait_idle()
+        self.assertEqual(len(self.app.items), 3)
+        self.assertEqual(self.app.import_errors, [])
+        self.assertIn("跳过重复 1", self.app.status.get())
+
     def test_import_order_restores_after_all_sort_modes(self):
         b = self.make_pdf("B.pdf", (9, 100))
         a = self.make_pdf("A.pdf", (30,))

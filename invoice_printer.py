@@ -20,7 +20,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import pymupdf as fitz
-from PIL import Image, ImageTk, ImageWin
+from PIL import Image, ImageOps, ImageTk, ImageWin
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 try:
@@ -32,7 +32,14 @@ except ImportError:  # 便于在非 Windows 环境中预览界面
     win32con = win32gui = win32print = win32ui = None
 
 
-APP_NAME = "简印 · PDF 发票打印"
+APP_NAME = "简印 · 发票打印"
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp", ".gif")
+SUPPORTED_EXTENSIONS = (".pdf", *IMAGE_EXTENSIONS)
+IMPORT_FILETYPES = [
+    ("PDF 和图片", tuple(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)),
+    ("PDF 文件", "*.pdf"),
+    ("图片文件", tuple(f"*{ext}" for ext in IMAGE_EXTENSIONS)),
+]
 COLORS = {
     "brand": "#3159C9",
     "brand_hover": "#2447AA",
@@ -110,7 +117,7 @@ def write_export(path, data, source_paths, cancel=None):
     """同目录临时文件 + 原子替换，避免失败时留下半个 PDF。"""
     target = Path(path)
     if canonical_path(target) in {canonical_path(p) for p in source_paths}:
-        raise ValueError("不能覆盖已导入的原始 PDF，请选择其他文件名。")
+        raise ValueError("不能覆盖已导入的原始文件，请选择其他文件名。")
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".invoice-", suffix=".tmp", delete=False) as stream:
@@ -213,6 +220,37 @@ def fit_rect(source: fitz.Rect, target: fitz.Rect) -> fitz.Rect:
     return fitz.Rect(x, y, x + w, y + h)
 
 
+def open_invoice_document(path, cancel=None) -> fitz.Document:
+    """统一返回 PDF；图片保留像素，校正方向并铺白底，调用方负责关闭。"""
+    extension = Path(path).suffix.lower()
+    if extension == ".pdf":
+        return fitz.open(path)
+    if extension not in IMAGE_EXTENSIONS:
+        raise ValueError("不支持的文件格式，请选择 PDF 或 PNG、JPG、BMP、TIFF、WebP、GIF 图片。")
+    document = fitz.open()
+    try:
+        with Image.open(path) as source:
+            # TIFF 扫描件按页导入；动画图片只使用首帧。
+            page_count = getattr(source, "n_frames", 1) if source.format == "TIFF" else 1
+            for page_no in range(page_count):
+                check_cancel(cancel)
+                source.seek(page_no)
+                with ImageOps.exif_transpose(source) as oriented:
+                    with oriented.convert("RGBA") as rgba, Image.new("RGB", oriented.size, "white") as rgb:
+                        rgb.paste(rgba, mask=rgba.getchannel("A"))
+                        with io.BytesIO() as stream:
+                            rgb.save(stream, "PNG")
+                            # 页尺寸只用于保持比例，像素数据不缩小。
+                            scale = 1000 / max(rgb.size)
+                            page = document.new_page(width=rgb.width * scale, height=rgb.height * scale)
+                            page.insert_image(page.rect, stream=stream.getvalue())
+                check_cancel(cancel)
+        return document
+    except BaseException:
+        document.close()
+        raise
+
+
 def compose_pdf(items: list[InvoicePage], settings: Settings, copies: int | None = None, cancel=None, progress=None) -> bytes:
     copy_count = settings.copies if copies is None else copies
     if not items:
@@ -239,7 +277,7 @@ def compose_pdf(items: list[InvoicePage], settings: Settings, copies: int | None
                 check_cancel(cancel)
                 source_doc = opened.get(item.path)
                 if source_doc is None:
-                    source_doc = fitz.open(item.path)
+                    source_doc = open_invoice_document(item.path, cancel)
                     opened[item.path] = source_doc
                 source_page = source_doc[item.page_no]
                 dest = fit_rect(source_page.rect, slot)
@@ -277,12 +315,12 @@ def read_invoice_paths(paths, existing, cancel, progress):
         for file_index, path in enumerate(paths):
             check_cancel(cancel)
             try:
-                with fitz.open(path) as doc:
+                with open_invoice_document(path, cancel) as doc:
                     if doc.needs_pass:
                         errors.append(f"{Path(path).name}（需要密码，未添加）")
                         continue
                     if not doc.is_pdf or doc.page_count == 0:
-                        errors.append(f"{Path(path).name}（不是有效的 PDF）")
+                        errors.append(f"{Path(path).name}（不是有效的 PDF 或图片）")
                         continue
                     for page_no in range(doc.page_count):
                         check_cancel(cancel)
@@ -392,7 +430,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         self._preview_job = None
         self._thumb_reset_job = None
         self._thumb_hover = False
-        self.status = tk.StringVar(value="添加 PDF 发票后即可预览和打印")
+        self.status = tk.StringVar(value="添加 PDF 或图片发票后即可预览和打印")
         self.count_var = tk.StringVar(value="0 张")
         self.output_var = tk.StringVar(value="A4 · 纵向 · 每页 1 张")
         self._configure_style()
@@ -440,7 +478,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         title_box = tk.Frame(header, bg=COLORS["panel"])
         title_box.pack(side="left")
         tk.Label(title_box, text="简印发票打印", fg=COLORS["text"], bg=COLORS["panel"], font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
-        tk.Label(title_box, text="PDF 批量排版与打印", fg=COLORS["muted"], bg=COLORS["panel"], font=("Microsoft YaHei UI", 8)).pack(anchor="w")
+        tk.Label(title_box, text="PDF / 图片批量排版与打印", fg=COLORS["muted"], bg=COLORS["panel"], font=("Microsoft YaHei UI", 8)).pack(anchor="w")
         badge = tk.Label(header, text="●  本地离线", fg="#15803D", bg="#ECFDF3", font=("Microsoft YaHei UI", 9), padx=12, pady=5)
         badge.pack(side="right", padx=22)
         tk.Frame(self, bg=COLORS["border"], height=1).pack(fill="x")
@@ -473,7 +511,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         self.cancel_btn.pack(side="right", padx=12, pady=4)
 
     def _setup_drag_and_drop(self):
-        """允许从资源管理器拖入一个或多个 PDF（含空格和中文路径）。"""
+        """允许从资源管理器拖入 PDF、图片或文件夹（含空格和中文路径）。"""
         targets = (self, self.left, self.center, self.thumb_canvas, self.preview_canvas)
         for widget in targets:
             widget.drop_target_register(DND_FILES)
@@ -482,13 +520,13 @@ class InvoicePrinterApp(TkinterDnD.Tk):
             widget.dnd_bind("<<Drop>>", self._drop_files)
 
     def _drop_enter(self, event):
-        if self.status.get() != "松开鼠标即可添加 PDF 发票":
+        if self.status.get() != "松开鼠标即可添加 PDF 或图片发票":
             self._status_before_drop = self.status.get()
-        self.status.set("松开鼠标即可添加 PDF 发票")
+        self.status.set("松开鼠标即可添加 PDF 或图片发票")
         return event.action
 
     def _drop_leave(self, event):
-        if self.status.get() == "松开鼠标即可添加 PDF 发票":
+        if self.status.get() == "松开鼠标即可添加 PDF 或图片发票":
             self.status.set(getattr(self, "_status_before_drop", "就绪"))
         return event.action
 
@@ -497,17 +535,17 @@ class InvoicePrinterApp(TkinterDnD.Tk):
             paths = list(self.tk.splitlist(event.data))
         except (tk.TclError, TypeError):
             paths = [event.data]
-        pdfs = []
+        files = []
         for path in paths:
             if Path(path).is_dir():
-                pdfs.extend(str(p) for p in sorted(Path(path).glob("*")) if p.is_file() and p.suffix.lower() == ".pdf")
-            elif Path(path).is_file() and Path(path).suffix.lower() == ".pdf":
-                pdfs.append(path)
-        if not pdfs:
-            self.status.set("拖入的文件中没有 PDF")
-            messagebox.showinfo("拖放文件", "请拖入一个或多个 PDF 文件。", parent=self)
+                files.extend(str(p) for p in sorted(Path(path).glob("*")) if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS)
+            elif Path(path).is_file() and Path(path).suffix.lower() in SUPPORTED_EXTENSIONS:
+                files.append(path)
+        if not files:
+            self.status.set("拖入的文件中没有支持的 PDF 或图片")
+            messagebox.showinfo("拖放文件", "请拖入 PDF 或 PNG、JPG、BMP、TIFF、WebP、GIF 图片，也可拖入文件夹。", parent=self)
             return event.action
-        self.add_paths(pdfs)
+        self.add_paths(files)
         return event.action
 
     def _build_left(self):
@@ -554,7 +592,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
 
         buttons = tk.Frame(self.left, bg=COLORS["sidebar"])
         buttons.pack(fill="x", padx=16, pady=16)
-        self.add_btn = ttk.Button(buttons, text="＋  添加 PDF 发票", style="Primary.TButton", command=self.add_files)
+        self.add_btn = ttk.Button(buttons, text="＋  添加 PDF / 图片", style="Primary.TButton", command=self.add_files)
         self.add_btn.pack(fill="x", pady=(0, 8))
         manage = ttk.Frame(buttons)
         manage.pack(fill="x")
@@ -563,7 +601,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         self.errors_btn = ttk.Button(buttons, text="查看导入问题", command=self.show_import_errors)
         self.errors_btn.pack(fill="x", pady=(6, 0))
         self.errors_btn.state(["disabled"])
-        tk.Label(buttons, text="移除只影响清单，原 PDF 会保留", bg=COLORS["sidebar"], fg=COLORS["muted"],
+        tk.Label(buttons, text="移除只影响清单，原文件会保留", bg=COLORS["sidebar"], fg=COLORS["muted"],
                  font=("Microsoft YaHei UI", 8)).pack(pady=(8, 0))
 
     def _build_center(self):
@@ -825,7 +863,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
             messagebox.showerror("打印队列", str(exc), parent=self)
 
     def add_files(self):
-        paths = filedialog.askopenfilenames(title="选择 PDF 发票", filetypes=[("PDF 文件", "*.pdf")])
+        paths = filedialog.askopenfilenames(title="选择 PDF 或图片发票", filetypes=IMPORT_FILETYPES)
         if paths:
             self.add_paths(paths)
 
@@ -918,7 +956,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         self._selection_vars = []
         visible = self._visible_items()
         if not visible:
-            empty = "暂无发票\n拖入 PDF 或文件夹，或点击下方添加" if not self.items else "没有符合筛选条件的发票\n可切回“全部”查看"
+            empty = "暂无发票\n拖入 PDF、图片或文件夹，或点击下方添加" if not self.items else "没有符合筛选条件的发票\n可切回“全部”查看"
             tk.Label(self.thumb_inner, text=empty, bg=COLORS["sidebar"], fg=COLORS["muted"], font=("Microsoft YaHei UI", 9), wraplength=210).pack(padx=12, pady=30)
         for index, item in visible:
             card = tk.Frame(self.thumb_inner, bg="white", highlightthickness=1,
@@ -1025,7 +1063,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         self.items[index].amount = value
         self.items[index].amount_verified = value is not None
         self._sort_items()
-        self.status.set("清单金额已更新，原 PDF 内容保留")
+        self.status.set("清单金额已更新，原文件内容保留")
 
     def _remember_removal(self, indices):
         removed = [(i, self.items[i]) for i in sorted(set(indices)) if 0 <= i < len(self.items)]
@@ -1160,7 +1198,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
         self.zoom_var.set("预览更新中…")
         self._preview_job = self.after(130, self._rebuild_preview)
 
-    def _draw_empty(self, message="将 PDF 发票或文件夹拖到这里\n也可以点击左下角添加 PDF 发票"):
+    def _draw_empty(self, message="将 PDF、图片或文件夹拖到这里\n也可以点击左下角添加 PDF / 图片"):
         self.preview_canvas.delete("all")
         width, height = self.preview_canvas.winfo_width(), self.preview_canvas.winfo_height()
         self.preview_canvas.configure(scrollregion=(0, 0, width, height))
@@ -1178,7 +1216,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
             self.preview_data = None
             self.preview_count = 0
             self._preview_dirty = False
-            self._draw_empty("请勾选至少一张发票" if self.items and not items else "请修正每张份数" if items else "将 PDF 发票或文件夹拖到这里\n也可以点击左下角添加 PDF 发票")
+            self._draw_empty("请勾选至少一张发票" if self.items and not items else "请修正每张份数" if items else "将 PDF、图片或文件夹拖到这里\n也可以点击左下角添加 PDF / 图片")
             return
         settings = replace(self.settings)
         def build(cancel, progress):
@@ -1328,7 +1366,7 @@ class InvoicePrinterApp(TkinterDnD.Tk):
             return False
         sources = tuple(x.path for x in self.items)
         if canonical_path(path) in {canonical_path(p) for p in sources}:
-            messagebox.showwarning("保护原始发票", "不能覆盖已导入的原始 PDF，请选择其他文件名。", parent=self)
+            messagebox.showwarning("保护原始发票", "不能覆盖已导入的原始文件，请选择其他文件名。", parent=self)
             return False
         items, settings = snapshot
         def export(cancel, progress):

@@ -38,7 +38,16 @@ def main():
             page.insert_text((40, 70), f"SYNTHETIC INVOICE QA-{i + 1:03}", fontsize=18)
             page.insert_text((40, 150), f"CNY {(i + 1) * 12.34:.2f}", fontsize=22)
         doc.save(source)
-    items = [app.InvoicePage(str(source), i, f"QA-{i}", None, b"") for i in range(3)]
+    # 混合 PDF、透明 PNG 与 JPEG，验证图片走过真实 Windows 打印流程。
+    items = [app.InvoicePage(str(source), 0, "QA-PDF", None, b"")]
+    with fitz.open(source) as doc:
+        for page_no, extension in ((1, "png"), (2, "jpg")):
+            path = root / f"synthetic-image.{extension}"
+            pix = doc[page_no].get_pixmap(matrix=fitz.Matrix(2, 2), alpha=extension == "png")
+            pix.save(path)
+            with app.open_invoice_document(path) as image_doc:
+                items.append(app.InvoicePage(str(path), 0, f"QA-{extension}", None,
+                                             app.make_thumbnail(image_doc[0])))
     gdi = ctypes.WinDLL("gdi32", use_last_error=True)
     gdi.StartDocW.argtypes = (wintypes.HDC, ctypes.POINTER(DOCINFOW))
     gdi.StartDocW.restype = ctypes.c_int

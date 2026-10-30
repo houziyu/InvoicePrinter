@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | 1.28.2 | PDF 读取、文字提取、渲染与排版 | AGPL v3 / Artifex 商业双许可；本项目采用 AGPL 路径。[发行包声明](licenses/PyMuPDF/COPYING)、[AGPL 全文](LICENSE) |
 | [MuPDF](https://github.com/ArtifexSoftware/mupdf) | 1.28.2 | PyMuPDF 的底层 PDF 引擎 | AGPL v3 / 商业双许可。[许可全文](licenses/MuPDF/COPYING) |
-| [Pillow](https://github.com/python-pillow/Pillow) | 12.3.0 | 缩略图、预览图像与打印图像 | MIT-CMU；二进制依赖另有条款，已包含在[发行包完整许可文件](licenses/Pillow/LICENSE)中 |
+| [Pillow](https://github.com/python-pillow/Pillow) | 12.3.0 | 图片导入、方向校正、缩略图、预览图像与打印图像 | MIT-CMU；二进制依赖另有条款，已包含在[发行包完整许可文件](licenses/Pillow/LICENSE)中 |
 | [pywin32](https://github.com/mhammond/pywin32) | 312 | Windows 打印机与 GDI 接口 | 包元数据标注 PSF；Win32 绑定附有 BSD 风格条款，其他组件依各自文件。[Win32 许可](licenses/pywin32/win32/License.txt)、[完整目录](licenses/pywin32/) |
 | [tkinterdnd2](https://github.com/Eliav2/tkinterdnd2) | 0.6.3 | Tkinter 文件拖放封装 | [MIT](licenses/tkinterdnd2/LICENSE) |
 | [tkdnd](https://github.com/petasis/tkdnd) | 随 tkinterdnd2 发行包提供 | 原生拖放扩展 | Tcl 风格许可，保留 George Petasis 等版权与声明。[许可头原文](licenses/tkdnd/license-header.txt) |
